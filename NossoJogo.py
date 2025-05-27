@@ -1,30 +1,24 @@
 import pygame
-import random
 import sys
-import math
 
 # Inicialização do Pygame
 pygame.init()
 
 # Tamanho da janela
-LARGURA = 800
-ALTURA = 600
+LARGURA = 1024
+ALTURA = 768
 screen = pygame.display.set_mode((LARGURA, ALTURA))
 pygame.display.set_caption("Point Clicker Game")
 clock = pygame.time.Clock()
 
 # Cores
 BRANCO = (255, 255, 255)
-VERMELHO = (255, 0, 0)
 VERDE = (0, 255, 0)
+VERMELHO = (255, 0, 0)
 
 # Fundo
-fundo = pygame.image.load("IMG/FundoReal.jpeg")
+fundo = pygame.image.load("IMG/IMAGEM DE FUNDO CERTA (1).png")
 fundo = pygame.transform.scale(fundo, (LARGURA, ALTURA))
-
-# Parâmetros dos círculos
-RAIO = 30
-NUMERO_DE_PONTOS = 7
 
 # Fonte
 font = pygame.font.SysFont(None, 48)
@@ -34,14 +28,14 @@ jogo_vencido = False
 jogo_perdido = False
 
 # Cronômetro
-TEMPO_LIMITE = 60_000  # 90 segundos
+TEMPO_LIMITE = 60_000  # 60 segundos
 tempo_inicial = pygame.time.get_ticks()
 
 # Classe para representar cada ponto com imagem própria
 class Alvo:
     def __init__(self, x, y, imagem):
-        self.imagem = pygame.transform.scale(imagem, (RAIO * 2, RAIO * 2))
-        self.rect = pygame.Rect(x - RAIO, y - RAIO, RAIO * 2, RAIO * 2)
+        self.imagem = imagem
+        self.rect = self.imagem.get_rect(center=(x, y))
 
     def desenhar(self, tela):
         tela.blit(self.imagem, self.rect)
@@ -49,36 +43,35 @@ class Alvo:
     def colidiu(self, pos):
         return self.rect.collidepoint(pos)
 
-# Carregar imagens diferentes para os pontos
+# Lista de imagens diferentes para os pontos
 nomes_imagens = [
-    "IMG/img1.png",
-    "IMG/img3.png",
-    "IMG/img2.png",
-
+    "IMG/Anel.png",
+    "IMG/Balão.png",
+    "IMG/Cachecol.png",
+    "IMG/Cachorro.png",
+    "IMG/Chapéu.png",
+    "IMG/Colar.png",
+    "IMG/Olho de Orus.png"
 ]
 
 imagens = [pygame.image.load(nome) for nome in nomes_imagens]
 
-# Função para verificar sobreposição
-def sobreposto(novo_rect, alvos):
-    for alvo in alvos:
-        dx = novo_rect.centerx - alvo.rect.centerx
-        dy = novo_rect.centery - alvo.rect.centery
-        if math.hypot(dx, dy) < RAIO * 2:
-            return True
-    return False
+# Coordenadas fixas para os alvos
+posicoes_fixas = [
+    (310, 650),
+    (1000, 25),
+    (30, 700),
+    (675, 768),
+    (945, 230),
+    (415, 400),
+    (610, 660)
+]
 
-# Geração dos pontos como objetos Alvo
+# Criar os alvos com posições fixas e imagens
 pontos = []
-i = 0
-while len(pontos) < NUMERO_DE_PONTOS and i < len(imagens):
-    x = random.randint(RAIO, LARGURA - RAIO)
-    y = random.randint(RAIO, ALTURA - RAIO)
-    rect_teste = pygame.Rect(x - RAIO, y - RAIO, RAIO * 2, RAIO * 2)
-
-    if not sobreposto(rect_teste, pontos):
-        pontos.append(Alvo(x, y, imagens[i]))
-        i += 1
+for i in range(min(len(imagens), len(posicoes_fixas))):
+    x, y = posicoes_fixas[i]
+    pontos.append(Alvo(x, y, imagens[i]))
 
 # Loop principal
 while True:
@@ -98,13 +91,14 @@ while True:
                 if alvo.colidiu(mouse_pos):
                     pontos.remove(alvo)
 
+    # Condições de vitória/derrota
     if not jogo_vencido and not jogo_perdido:
         if len(pontos) == 0:
             jogo_vencido = True
         elif tempo_passado >= TEMPO_LIMITE:
             jogo_perdido = True
 
-    # Desenha todos os pontos
+    # Desenhar os alvos restantes
     for alvo in pontos:
         alvo.desenhar(screen)
 
@@ -113,7 +107,7 @@ while True:
     tempo_texto = font.render(f"Tempo: {segundos}", True, BRANCO)
     screen.blit(tempo_texto, (10, 10))
 
-    # Mensagens de fim de jogo
+    # Mensagem de fim de jogo
     if jogo_vencido:
         msg = font.render("Você Venceu!", True, VERDE)
         screen.blit(msg, (LARGURA // 2 - msg.get_width() // 2, ALTURA // 2))
