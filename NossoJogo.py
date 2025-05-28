@@ -1,5 +1,7 @@
 import pygame
 import sys
+import cv2
+from pygame.locals import *
 
 # Inicialização do Pygame
 pygame.init()
@@ -10,6 +12,43 @@ ALTURA = 768
 screen = pygame.display.set_mode((LARGURA, ALTURA))
 pygame.display.set_caption("Point Clicker Game")
 clock = pygame.time.Clock()
+
+
+# Função para tocar vídeo com OpenCV
+def tocar_video(caminho_video, tela):
+    cap = cv2.VideoCapture(caminho_video)
+
+    if not cap.isOpened():
+        print(f"Erro ao abrir o vídeo: {caminho_video}")
+        return
+
+    clock_video = pygame.time.Clock()
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break  # Fim do vídeo
+
+        # Converter o frame do OpenCV (BGR) para RGB
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+        # Redimensionar para caber na tela
+        frame = cv2.resize(frame, (LARGURA, ALTURA))
+
+        # Converter para superfície do Pygame
+        surface = pygame.surfarray.make_surface(frame.swapaxes(0, 1))
+
+        for event in pygame.event.get():
+            if event.type == QUIT:
+                cap.release()
+                pygame.quit()
+                sys.exit()
+
+        tela.blit(surface, (0, 0))
+        pygame.display.update()
+        clock_video.tick(24)  # Ajuste conforme FPS desejado
+
+    cap.release()
 
 # Cores
 BRANCO = (255, 255, 255)
@@ -31,6 +70,7 @@ jogo_perdido = False
 TEMPO_LIMITE = 60_000  # 60 segundos
 tempo_inicial = pygame.time.get_ticks()
 
+
 # Classe para representar cada ponto com imagem própria
 class Alvo:
     def __init__(self, x, y, imagem):
@@ -42,6 +82,7 @@ class Alvo:
 
     def colidiu(self, pos):
         return self.rect.collidepoint(pos)
+
 
 # Lista de imagens diferentes para os pontos
 nomes_imagens = [
@@ -60,7 +101,7 @@ imagens = [pygame.image.load(nome) for nome in nomes_imagens]
 posicoes_fixas = [
     (310, 650),
     (1000, 25),
-    (30, 700),
+    (30 , 700),
     (675, 768),
     (945, 235),
     (415, 400),
@@ -73,6 +114,7 @@ for i in range(min(len(imagens), len(posicoes_fixas))):
     x, y = posicoes_fixas[i]
     pontos.append(Alvo(x, y, imagens[i]))
 
+tocar_video("Video/cutscenefase1.mp4", screen)
 # Loop principal
 while True:
     tempo_passado = pygame.time.get_ticks() - tempo_inicial
