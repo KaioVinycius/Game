@@ -1,0 +1,375 @@
+import pygame
+import sys
+import random
+import heapq  # For A* pathfinding
+
+# Inicialização
+pygame.init()
+largura, altura = 1024, 768
+tela = pygame.display.set_mode((largura, altura))
+pygame.display.set_caption("Corra dos guardas ")
+clock = pygame.time.Clock()
+
+# Imagens
+img_barracasA = pygame.image.load('Fase2/Barraca2.png')
+img_barracasA = pygame.transform.scale(img_barracasA, (30, 35))
+img_barracasV = pygame.image.load('Barraca3.png')
+img_barracasV = pygame.transform.scale(img_barracasV, (30, 35))
+img_barracasC = pygame.image.load('Sem título.png')
+img_barracasC = pygame.transform.scale(img_barracasC, (30, 35))
+mapa_fundo = pygame.image.load('mapaFinalJogo01.png')
+mapa_fundo = pygame.transform.scale(mapa_fundo, (1025, altura))
+taxi = pygame.image.load('TAXI.png')
+taxi = pygame.transform.scale(taxi, (60, 60))
+
+# Imagens do Personagem em 4 direções
+personagem_imgs = {
+    "cima": pygame.transform.scale(pygame.image.load('PersonagemCima.PNG'), (40, 40)),
+    "baixo": pygame.transform.scale(pygame.image.load('PersonagemBaixo.PNG'), (40, 40)),
+    "esquerda": pygame.transform.scale(pygame.image.load('PersonagemEsquerda.PNG'), (40, 40)),
+    "direita": pygame.transform.scale(pygame.image.load('PersonagemDireita.PNG'), (40, 40)),
+}
+direcao_personagem = "direita"  # Direção inicial
+
+# Cores
+PRETO = (0, 0, 0)
+BRANCO = (255, 255, 255)
+VERMELHO = (255, 0, 0)
+CINZA = (150, 150, 150)  # Uma nova cor para os controles, se desejar
+VERDE = (0, 255, 0)
+# Mapa
+mapa_base = [
+    "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$",
+    "$                                                   $",
+    "$  ####  ++++   ######   ++++++                     $",
+    "$  #  #  +  +   #    #   +    +     ++++++++++      $",
+    "$  #  #  +  +   ######   +++  +     +        +  *   $",
+    "$  ####  ++++              ++++     +        +  *   $",
+    "$                                   +        +  *   $",
+    "$  +++++++    #####   #####         +        +  *   $",
+    "$  +     +    #   #   #   #   **    ++++++++++  *   $",
+    "$  +++++++    #   #   #   #   **                    $",
+    "$             #####   #####        +++++++++++      $",
+    "$   ***                                             $",
+    "$        ++++++   #######  #########         ###    $",
+    "$        +    +   #     #  #       #   ***   # #    $",
+    "$   *    ++++++   #######  #########   ***   # #    $",
+    "$   *                                        # #    $",
+    "$                   #####  *****   #######   ###    $",
+    "$      ++++++++                                     $",
+    "$  +++++      ++++   #######   +++++++++++++        $",
+    "$  +             +   #     #   +           +        $",
+    "$  +++++++++++++++   #######   +++++++++++++    XVVV$",
+    "$                                               V   $",
+    "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$"
+]
+colunas = max(len(linha) for linha in mapa_base)
+mapa_base = [linha.ljust(colunas, "#") for linha in mapa_base]
+linhas = len(mapa_base)
+
+# Blocos
+obstaculos = ['#', '+', '$', '*']
+tamanho_bloco_x = largura // colunas
+tamanho_bloco_y = altura // linhas
+
+# Personagem principal
+personagem_x, personagem_y = 1, 1
+move_timer = 0
+velocidade_movimento = 9
+vidas = 3
+game_over = False
+vitoria = False  # Nova variável para controlar a vitória
+
+# Posição inicial do personagem
+personagem_start_x, personagem_start_y = 1, 1
+
+def desenhar_mapa():
+    tela.fill(PRETO)
+    tela.blit(mapa_fundo, (0, 0))
+    for y, linha in enumerate(mapa_base):
+        for x, caractere in enumerate(linha):
+            rect = pygame.Rect(x * tamanho_bloco_x, y * tamanho_bloco_y, tamanho_bloco_x, tamanho_bloco_y)
+            if caractere == "#":
+                tela.blit(img_barracasA, rect)
+            elif caractere == "+":
+                tela.blit(img_barracasV, rect)
+            elif caractere == "*":
+                tela.blit(img_barracasC, rect)
+            elif caractere == "X":
+                tela.blit(taxi, rect)
+            elif caractere == "$":
+                pygame.draw.rect(tela, PRETO, rect)
+
+def mover_personagem(dx, dy, nova_direcao):
+    global personagem_x, personagem_y, direcao_personagem
+    novo_x = personagem_x + dx
+    novo_y = personagem_y + dy
+    if 0 <= novo_x < colunas and 0 <= novo_y < linhas:
+        if mapa_base[novo_y][novo_x] not in obstaculos:
+            personagem_x = novo_x
+            personagem_y = novo_y
+            direcao_personagem = nova_direcao
+
+
+def verificar_vitoria_condicao():
+    return mapa_base[personagem_y][personagem_x] in ["X", "V"]
+
+
+# --- NPC Class and A* Pathfinding ---
+class NPC:
+    def __init__(self, x, y, images_dict, speed=1, name="Guard"):
+        self.start_x = x  # Armazena a posição inicial
+        self.start_y = y  # Armazena a posição inicial
+        self.x = x
+        self.y = y
+        self.images = images_dict
+        self.direction = "direita"
+        self.speed = speed  # NPC movement speed (lower means faster)
+        self.move_timer = 0
+        self.name = name
+
+    def draw(self):
+        tela.blit(self.images[self.direction], (self.x * tamanho_bloco_x, self.y * tamanho_bloco_y))
+
+    def move_towards_player(self, player_x, player_y):
+        self.move_timer += 1
+        if self.move_timer >= self.speed:
+            path = self.find_path((self.x, self.y), (player_x, player_y))
+            if path and len(path) > 1:
+                next_x, next_y = path[1]
+                dx = next_x - self.x
+                dy = next_y - self.y
+
+                if dx == 1:
+                    self.direction = "direita"
+                elif dx == -1:
+                    self.direction = "esquerda"
+                elif dy == 1:
+                    self.direction = "baixo"
+                elif dy == -1:
+                    self.direction = "cima"
+
+                self.x = next_x
+                self.y = next_y
+            self.move_timer = 0
+
+    def heuristic(self, a, b):
+        return abs(a[0] - b[0]) + abs(a[1] - b[1])
+
+    def find_path(self, start, goal):
+        open_set = []
+        heapq.heappush(open_set, (0, start))
+        came_from = {}
+        g_score = {start: 0}
+        f_score = {start: self.heuristic(start, goal)}
+
+        while open_set:
+            current_f, current = heapq.heappop(open_set)
+
+            if current == goal:
+                path = []
+                while current in came_from:
+                    path.append(current)
+                    current = came_from[current]
+                path.append(start)
+                return path[::-1]  # Reverse path to get from start to goal
+
+            for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
+                neighbor = (current[0] + dx, current[1] + dy)
+
+                if 0 <= neighbor[0] < colunas and 0 <= neighbor[1] < linhas:
+                    if mapa_base[neighbor[1]][neighbor[0]] not in obstaculos:
+                        tentative_g_score = g_score[current] + 1
+
+                        if neighbor not in g_score or tentative_g_score < g_score[neighbor]:
+                            came_from[neighbor] = current
+                            g_score[neighbor] = tentative_g_score
+                            f_score[neighbor] = tentative_g_score + self.heuristic(neighbor, goal)
+                            heapq.heappush(open_set, (f_score[neighbor], neighbor))
+        return None
+
+    def reset_position(self):
+        self.x = self.start_x
+        self.y = self.start_y
+        self.move_timer = 0  # Reset timer so they don't immediately move
+
+# NPCs (using the new NPC class)
+npc_images = {
+    "policial ruiva": {
+        "cima": pygame.transform.scale(pygame.image.load('policial ruiva/IMG_4362.PNG'), (40, 40)),
+        "baixo": pygame.transform.scale(pygame.image.load('policial ruiva/IMG_4363.PNG'), (40, 40)),
+        "esquerda": pygame.transform.scale(pygame.image.load('policial ruiva/IMG_4361.PNG'), (40, 40)),
+        "direita": pygame.transform.scale(pygame.image.load('policial ruiva/IMG_4360.PNG'), (40, 40)),
+    },
+    "policial loira": {
+        "cima": pygame.transform.scale(pygame.image.load('policial loira/IMG_4366.PNG'), (40, 40)),
+        "baixo": pygame.transform.scale(pygame.image.load('policial loira/IMG_4367.PNG'), (40, 40)),
+        "esquerda": pygame.transform.scale(pygame.image.load('policial loira/IMG_4365.PNG'), (40, 40)),
+        "direita": pygame.transform.scale(pygame.image.load('policial loira/IMG_4364.PNG'), (40, 40)),
+    },
+    "policial morena": {
+        "cima": pygame.transform.scale(pygame.image.load('policial morena/IMG_4370.PNG'), (40, 40)),
+        "baixo": pygame.transform.scale(pygame.image.load('policial morena/IMG_4371.PNG'), (40, 40)),
+        "esquerda": pygame.transform.scale(pygame.image.load('policial morena/IMG_4369.PNG'), (40, 40)),
+        "direita": pygame.transform.scale(pygame.image.load('policial morena/IMG_4368.PNG'), (40, 40)),
+    },
+    "policial homem": {
+        "cima": pygame.transform.scale(pygame.image.load('policial homem/IMG_4375.PNG'), (40, 40)),
+        "baixo": pygame.transform.scale(pygame.image.load('policial homem/IMG_4374.PNG'), (40, 40)),
+        "esquerda": pygame.transform.scale(pygame.image.load('policial homem/IMG_4372.PNG'), (40, 40)),
+        "direita": pygame.transform.scale(pygame.image.load('policial homem/IMG_4373.PNG'), (40, 40)),
+    },
+}
+
+guards = [
+    NPC(950 // tamanho_bloco_x, 600 // tamanho_bloco_y, npc_images["policial homem"], speed=10, name="Homem"),
+    NPC(530 // tamanho_bloco_x, 350 // tamanho_bloco_y, npc_images["policial ruiva"], speed=10, name="Ruiva"),
+    NPC(20 // tamanho_bloco_x, 670 // tamanho_bloco_y, npc_images["policial loira"], speed=10, name="Loira"),
+    NPC(950 // tamanho_bloco_x, 200 // tamanho_bloco_y, npc_images["policial morena"], speed=10, name="Morena"),
+]
+
+# Função para desenhar texto com borda
+def desenhar_texto_borda(surface, text, font, text_color, border_color, border_width, center_pos):
+    # Desenha a borda
+    text_surface_border = font.render(text, True, border_color)
+    text_rect_border = text_surface_border.get_rect(center=center_pos)
+
+    # Desenha 8 cópias do texto da borda ao redor do centro
+    for x_offset in range(-border_width, border_width + 1):
+        for y_offset in range(-border_width, border_width + 1):
+            if x_offset != 0 or y_offset != 0:  # Evita desenhar no centro (onde o texto principal irá)
+                surface.blit(text_surface_border, (text_rect_border.x + x_offset, text_rect_border.y + y_offset))
+
+    # Desenha o texto principal
+    text_surface = font.render(text, True, text_color)
+    text_rect = text_surface.get_rect(center=center_pos)
+    surface.blit(text_surface, text_rect)
+
+# Função para a contagem regressiva
+def contagem_regressiva():
+    fonte_contagem = pygame.font.SysFont(None, 150)  # Fonte grande para a contagem
+    fonte_controles_titulo = pygame.font.SysFont(None, 45, bold=True)  # Fonte para o título "Controles:"
+    fonte_controles_texto = pygame.font.SysFont(None, 35)  # Fonte para os nomes dos controles
+    fonte_controles_setas = pygame.font.SysFont(None, 40, bold=True)  # Fonte para as setas
+
+    # Posições para os elementos na tela
+    # Contagem no centro
+    pos_contagem = (largura // 2, altura // 2)
+
+    # Controles (ajustados para ficarem abaixo da contagem)
+    # Posição do título "Controles:"
+    pos_titulo_controles = (largura // 2, altura // 2 + 100)  # Ajustado para ficar abaixo da contagem
+
+    # Posições para os nomes dos controles (esquerda, cima, baixo, direita)
+    # Ajustadas para ficarem em uma linha logo abaixo do título
+    pos_nomes_controles = (largura // 2, altura // 2 + 150)  # Posição central para o bloco de texto
+
+    # Posições para as setas (abaixo dos nomes)
+    base_y_setas = altura // 2 + 200  # Base Y para as setas
+    pos_up_arrow = (largura // 2, base_y_setas - 40)  # Seta Cima
+    pos_left_arrow = (largura // 2 - 50, base_y_setas - 10)  # Seta Esquerda
+    pos_down_arrow = (largura // 2, base_y_setas + 20)  # Seta Baixo
+    pos_right_arrow = (largura // 2 + 50, base_y_setas - 10)  # Seta Direita
+
+    for i in range(3, 0, -1):  # Contagem de 3 a 1
+        desenhar_mapa()  # Desenha o mapa para o fundo
+        # Desenha personagem e guardas nas posições iniciais durante a contagem
+        tela.blit(personagem_imgs[direcao_personagem],
+                  (personagem_start_x * tamanho_bloco_x, personagem_start_y * tamanho_bloco_y))
+        for guard in guards:
+            tela.blit(guard.images[guard.direction], (guard.start_x * tamanho_bloco_x, guard.start_y * tamanho_bloco_y))
+
+        # Desenha o número da contagem com borda
+        desenhar_texto_borda(tela, str(i), fonte_contagem, BRANCO, PRETO, 3, pos_contagem)
+
+        # Desenha o título "Controles:"
+        desenhar_texto_borda(tela, "Controles:", fonte_controles_titulo, BRANCO, PRETO, 1, pos_titulo_controles)
+
+        # Desenha as setas (com uma pequena borda para destacar)
+        desenhar_texto_borda(tela, "^", fonte_controles_setas, PRETO, BRANCO, 1, pos_up_arrow)
+        desenhar_texto_borda(tela, "<", fonte_controles_setas, PRETO, BRANCO, 1, pos_left_arrow)
+        desenhar_texto_borda(tela, "v", fonte_controles_setas, PRETO, BRANCO, 1, pos_down_arrow)
+        desenhar_texto_borda(tela, ">", fonte_controles_setas, PRETO, BRANCO, 1, pos_right_arrow)
+
+        pygame.display.flip()
+        pygame.time.wait(1000)  # Espera 1 segundo
+
+# --- Chamada inicial da contagem regressiva ---
+contagem_regressiva()
+
+# Loop principal
+rodando = True
+while rodando:
+    clock.tick(60)
+
+    for evento in pygame.event.get():
+        if evento.type == pygame.QUIT:
+            rodando = False
+
+    # Só processa movimentos e colisões se o jogo não tiver terminado
+    if not game_over and not vitoria:
+        teclas = pygame.key.get_pressed()
+        move_timer += 1
+        if move_timer >= velocidade_movimento:
+            if teclas[pygame.K_LEFT]:
+                mover_personagem(-1, 0, "esquerda")
+            elif teclas[pygame.K_RIGHT]:
+                mover_personagem(1, 0, "direita")
+            elif teclas[pygame.K_UP]:
+                mover_personagem(0, -1, "cima")
+            elif teclas[pygame.K_DOWN]:
+                mover_personagem(0, 1, "baixo")
+            move_timer = 0
+
+        desenhar_mapa()
+
+        # Mover e desenhar NPCs
+        for guard in guards:
+            guard.move_towards_player(personagem_x, personagem_y)
+            guard.draw()
+
+            # Colisão com o jogador
+            if guard.x == personagem_x and guard.y == personagem_y:
+                vidas -= 1
+                if vidas == 0:
+                    game_over = True
+                else:
+                    # Resetar a posição do jogador
+                    personagem_x, personagem_y = personagem_start_x, personagem_start_y
+                    # Resetar a posição de TODOS os guardas
+                    for g in guards:
+                        g.reset_position()
+                    # CHAMAR A CONTAGEM REGRESSIVA APÓS O RESET
+                    contagem_regressiva()
+
+        # Verificar vitória após todos os movimentos e colisões
+        if verificar_vitoria_condicao():
+            vitoria = True
+
+        # Desenhar Personagem (com imagem na direção atual)
+        tela.blit(personagem_imgs[direcao_personagem], (personagem_x * tamanho_bloco_x, personagem_y * tamanho_bloco_y))
+
+        # Exibir vidas
+        fonte = pygame.font.SysFont(None, 36)
+        texto = fonte.render(f"Vidas: {vidas}", True, BRANCO)
+        tela.blit(texto, (10, 10))
+
+    # Lógica para exibir mensagens finais e encerrar o jogo
+    if game_over:
+        fonte_fim = pygame.font.SysFont(None, 80)
+        desenhar_texto_borda(tela, "Você Perdeu!", fonte_fim, VERMELHO, PRETO, 2, (largura // 2, altura // 2))
+        pygame.display.flip()  # Atualiza a tela para mostrar a mensagem
+        pygame.time.wait(2000)  # Espera 2 segundos
+        rodando = False  # Encerra o loop principal
+    elif vitoria:
+        fonte_fim = pygame.font.SysFont(None, 80)
+        desenhar_texto_borda(tela, "Você Venceu!", fonte_fim, VERDE, PRETO, 2, (largura // 2, altura // 2))
+        pygame.display.flip()  # Atualiza a tela para mostrar a mensagem
+        pygame.time.wait(2000)  # Espera 2 segundos
+        rodando = False  # Encerra o loop principal
+    else:
+        # Se o jogo ainda está rodando, atualiza a tela normalmente
+        pygame.display.flip()
+
+pygame.quit()
+sys.exit()
